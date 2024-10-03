@@ -224,7 +224,9 @@ int bpfnic_benchmark_cpu_func(struct xdp_md *ctx)
 	}
 
 	// loop for 10 times the data portion of the packet
-	bpf_loop(((int)packet->data) * 10, _empty_loop_func, NULL, 0);
+	// bpf_loop(((int)packet->data) * 10, _empty_loop_func, NULL, 0);
+	for (int i = 0; i < ((int)packet->data) * 10; ++i) {
+	}
 
 	tx_packets = bpf_map_lookup_elem(&tx_packet_ctr, &key0);
 	if (tx_packets) {
@@ -316,8 +318,30 @@ int bpf_redirect_roundrobin(struct xdp_md *ctx)
 		return XDP_PASS;
 	}
 
-	// TODO: make redirection decision
-	return XDP_DROP;
+	cpu_iterator = bpf_map_lookup_elem(&cpu_iter, &key0);
+	if (cpu_iterator == NULL) {
+		return XDP_ABORTED;
+	}
+
+	cpu_count = bpf_map_lookup_elem(&cpus_count, &key0);
+	if (cpu_count == NULL) {
+		return XDP_ABORTED;
+	}
+
+	__sync_fetch_and_add(cpu_iterator, 1);
+	cpu_idx = *cpu_iterator % *cpu_count;
+
+	cpu_selected = bpf_map_lookup_elem(&cpus_available, &cpu_idx);
+	if (cpu_selected == NULL) {
+		return XDP_ABORTED;
+	}
+
+	if (*cpu_selected) {
+		bpf_redirect_map(&cpu_map, cpu_idx, 0);
+		return XDP_REDIRECT;
+	} else {
+		return XDP_ABORTED;
+	}
 }
 
 /* array of cpus available for processing long requests */
