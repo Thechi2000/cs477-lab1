@@ -400,8 +400,47 @@ int bpf_redirect_roundrobin_core_separated(struct xdp_md *ctx)
 	if (!bpfnic_benchmark_parse_and_timestamp_packet(ctx, &nh))
 		return XDP_PASS;
 
-	// TODO: make redirection decision
-	return XDP_DROP;
+	cpu_iterator_short =
+		bpf_map_lookup_elem(&cpu_iter_core_separated, &key0);
+	cpu_iterator_long = bpf_map_lookup_elem(&cpu_iter_core_separated, &key1);
+
+	cpu_count_short = bpf_map_lookup_elem(&cpu_count_core_separated, &key0);
+	cpu_count_long = bpf_map_lookup_elem(&cpu_count_core_separated, &key1);
+
+	if (!cpu_count_short || !cpu_count_long || !cpu_iterator_short ||
+	    !cpu_iterator_long) {
+		return XDP_ABORTED;
+	}
+
+	packet = (struct packet *)nh.pos;
+	if (packet->data >= 10) {
+		__sync_fetch_and_add(cpu_iterator_long, 1);
+		cpu_idx = *cpu_iterator_long % *cpu_count_long;
+
+		cpu_selected = bpf_map_lookup_elem(&cpus_available_long_reqs,
+						   &cpu_idx);
+		if (cpu_selected == NULL) {
+			return XDP_ABORTED;
+		}
+
+		cpu_idx += *cpu_count_short;
+	} else {
+		__sync_fetch_and_add(cpu_iterator_short, 1);
+		cpu_idx = *cpu_iterator_short % *cpu_count_short;
+
+		cpu_selected = bpf_map_lookup_elem(&cpus_available_short_reqs,
+						   &cpu_idx);
+		if (cpu_selected == NULL) {
+			return XDP_ABORTED;
+		}
+	}
+
+	if (*cpu_selected) {
+		bpf_redirect_map(&cpu_map, cpu_idx, 0);
+		return XDP_REDIRECT;
+	} else {
+		return XDP_ABORTED;
+	}
 }
 
 SEC("tc")
