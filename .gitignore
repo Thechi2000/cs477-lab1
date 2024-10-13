@@ -12,3 +12,4 @@ CMakeFiles/*
 *.csv
 
 bpfnic/synthetic-traffic-gen/build/CMakeFiles
+.venv
